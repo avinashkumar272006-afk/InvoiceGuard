@@ -107,3 +107,24 @@ def get_verification(db: Session, invoice_id: int) -> Verification:
         
     verification = db.query(Verification).filter(Verification.invoice_id == invoice_id).first()
     return verification
+
+def get_exception_summary(db: Session) -> dict:
+    from sqlalchemy import func
+    
+    total = db.query(func.count(InvoiceException.id)).scalar() or 0
+    resolved = db.query(func.count(InvoiceException.id)).filter(InvoiceException.resolved == True).scalar() or 0
+    unresolved = db.query(func.count(InvoiceException.id)).filter(InvoiceException.resolved == False).scalar() or 0
+    
+    by_type_query = db.query(
+        InvoiceException.exception_type,
+        func.count(InvoiceException.id)
+    ).group_by(InvoiceException.exception_type).all()
+    
+    by_type = {exc_type.value: count for exc_type, count in by_type_query}
+    
+    return {
+        "total": total,
+        "resolved": resolved,
+        "unresolved": unresolved,
+        "by_type": by_type
+    }

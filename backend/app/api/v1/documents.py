@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.database.connection import get_db
 from app.models.invoice_document import InvoiceDocument, DocumentStatus
-from app.schemas.document import DocumentResponse, DocumentProcessingResponse
+from app.schemas.document import DocumentResponse, DocumentProcessingResponse, DocumentUrlResponse
 from app.services.validation import validate_file
 from app.services.storage import storage_service
 from app.services.document_processing import process_document
@@ -98,3 +98,24 @@ def process_invoice_document(
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=result.message)
         
     return result
+
+@router.get("/{document_id}/file", response_model=DocumentUrlResponse, status_code=status.HTTP_200_OK)
+def get_document_file(
+    document_id: uuid.UUID,
+    db: Session = Depends(get_db)
+) -> Any:
+    """
+    Returns a short-lived signed URL to securely view the document.
+    """
+    doc = db.query(InvoiceDocument).filter(InvoiceDocument.id == document_id).first()
+    if not doc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found")
+        
+    try:
+        expires_in = 60
+        url = storage_service.create_signed_url(doc.storage_path, expires_in=expires_in)
+        return DocumentUrlResponse(url=url, expires_in=expires_in)
+    except Exception:
+        # Do not expose internal Supabase errors
+        logger.exception("Failed to generate signed URL", extra={"document_id": str(document_id)})
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to retrieve document file")

@@ -16,3 +16,7 @@ class DocumentProcessingResponse(BaseModel):
     success: bool
     message: str
     invoice_id: Optional[int] = None
+
+class DocumentUrlResponse(BaseModel):
+    url: str
+    expires_in: int

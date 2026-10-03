@@ -1,7 +1,8 @@
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, AliasPath
 from typing import Optional, List
 from datetime import date
 from decimal import Decimal
+import uuid
 from app.models.invoice import InvoiceStatus
 
 class InvoiceItemBase(BaseModel):
@@ -36,5 +37,6 @@ class InvoiceUpdate(BaseModel):
 class InvoiceRead(InvoiceBase):
     id: int
     items: List[InvoiceItemRead] = []
+    document_id: Optional[uuid.UUID] = Field(default=None, validation_alias=AliasPath("document", "id"))
 
     model_config = ConfigDict(from_attributes=True)

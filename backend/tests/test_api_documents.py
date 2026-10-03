@@ -232,3 +232,78 @@ def test_process_document_validation_failure(db_session):
         data = response.json()
         assert data["success"] is False
         assert "validation failed" in data["message"]
+
+def test_get_document_file_success(db_session, mock_storage_service):
+    # Insert a dummy document
+    import uuid
+    from app.models.invoice_document import InvoiceDocument, DocumentStatus
+    
+    doc_id = uuid.uuid4()
+    doc = InvoiceDocument(
+        id=doc_id,
+        filename="test.pdf",
+        content_type="application/pdf",
+        storage_path=f"raw/{doc_id}.pdf",
+        status=DocumentStatus.PENDING
+    )
+    db_session.add(doc)
+    db_session.commit()
+    
+    # Mock create_signed_url
+    mock_url = "https://fake-supabase.com/signed-url-12345"
+    mock_storage_service.create_signed_url.return_value = mock_url
+    
+    response = client.get(f"/api/v1/documents/{doc_id}/file")
+    
+    assert response.status_code == status.HTTP_200_OK
+    data = response.json()
+    assert data["url"] == mock_url
+    assert data["expires_in"] == 60
+    
+    # Ensure URL is not persisted (no url field in DB)
+    db_doc = db_session.query(InvoiceDocument).filter(InvoiceDocument.id == doc_id).first()
+    assert not hasattr(db_doc, "signed_url")
+    assert not hasattr(db_doc, "url")
+    
+    # Verify service received correct storage path
+    mock_storage_service.create_signed_url.assert_called_once_with(f"raw/{doc_id}.pdf", expires_in=60)
+    
+    # Ensure no secrets in response
+    assert "SUPABASE_SERVICE_KEY" not in str(data)
+    assert "apikey" not in str(data).lower()
+
+def test_get_document_file_not_found(db_session, mock_storage_service):
+    import uuid
+    doc_id = uuid.uuid4()
+    
+    response = client.get(f"/api/v1/documents/{doc_id}/file")
+    
+    assert response.status_code == status.HTTP_404_NOT_FOUND
+    assert response.json()["detail"] == "Document not found"
+    mock_storage_service.create_signed_url.assert_not_called()
+
+def test_get_document_file_storage_failure(db_session, mock_storage_service):
+    import uuid
+    from app.models.invoice_document import InvoiceDocument, DocumentStatus
+    
+    doc_id = uuid.uuid4()
+    doc = InvoiceDocument(
+        id=doc_id,
+        filename="test.pdf",
+        content_type="application/pdf",
+        storage_path=f"raw/{doc_id}.pdf",
+        status=DocumentStatus.PENDING
+    )
+    db_session.add(doc)
+    db_session.commit()
+    
+    mock_storage_service.create_signed_url.side_effect = RuntimeError("Storage signed URL creation failed")
+    
+    response = client.get(f"/api/v1/documents/{doc_id}/file")
+    
+    # Should return safe 500 without exposing provider error details
+    assert response.status_code == status.HTTP_500_INTERNAL_SERVER_ERROR
+    data = response.json()
+    assert data["detail"] == "Failed to retrieve document file"
+    assert "Supabase" not in data["detail"]
+    assert "RuntimeError" not in data["detail"]

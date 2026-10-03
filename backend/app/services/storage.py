@@ -61,6 +61,27 @@ class StorageService:
             logger.exception("Failed to download from Supabase", extra={"storage_path": storage_path})
             raise RuntimeError("Storage download failed") from e
 
+    def create_signed_url(self, storage_path: str, expires_in: int = 60) -> str:
+        """
+        Creates a short-lived signed URL for a file in Supabase storage.
+        """
+        if not self.client:
+            raise RuntimeError("Supabase client not configured")
+            
+        try:
+            start_time = time.time()
+            res = self.client.storage.from_(self.bucket_name).create_signed_url(storage_path, expires_in)
+            duration = round((time.time() - start_time) * 1000, 2)
+            logger.info("storage_signed_url_created", extra={"storage_path": storage_path, "duration_ms": duration})
+            
+            url = res.get("signedURL") or res.get("signedUrl")
+            if not url:
+                raise RuntimeError("Failed to extract signed URL from response")
+            return url
+        except Exception as e:
+            logger.exception("Failed to create signed URL from Supabase", extra={"storage_path": storage_path})
+            raise RuntimeError("Storage signed URL creation failed") from e
+
     def delete_file(self, storage_path: str) -> None:
         """
         Deletes a file from Supabase storage.

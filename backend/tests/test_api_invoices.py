@@ -89,3 +89,40 @@ def test_update_invoice():
     data = response.json()
     assert data["status"] == "PAID"
     assert data["invoice_number"] == inv["invoice_number"]
+
+def test_get_invoice_with_document_id():
+    inv = test_create_invoice()
+    
+    from app.database.connection import SessionLocal
+    from app.models.invoice_document import InvoiceDocument, DocumentStatus
+    
+    doc_id = uuid.uuid4()
+    db = SessionLocal()
+    try:
+        doc = InvoiceDocument(
+            id=doc_id,
+            filename="test.pdf",
+            content_type="application/pdf",
+            storage_path=f"raw/{doc_id}.pdf",
+            status=DocumentStatus.PENDING,
+            invoice_id=inv["id"]
+        )
+        db.add(doc)
+        db.commit()
+    finally:
+        db.close()
+        
+    response = client.get(f"/api/v1/invoices/{inv['id']}")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["document_id"] == str(doc_id)
+    assert "storage_path" not in data
+    assert "url" not in data
+
+def test_get_invoice_without_document():
+    inv = test_create_invoice()
+    
+    response = client.get(f"/api/v1/invoices/{inv['id']}")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["document_id"] is None

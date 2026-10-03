@@ -1,5 +1,5 @@
 from typing import List, Optional
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 from sqlalchemy.exc import IntegrityError
 from app.models.invoice import Invoice, InvoiceItem
 from app.schemas.invoice import InvoiceCreate, InvoiceUpdate
@@ -27,10 +27,10 @@ def create_invoice(db: Session, invoice_in: InvoiceCreate) -> Invoice:
     return db_invoice
 
 def get_invoice(db: Session, invoice_id: int) -> Optional[Invoice]:
-    return db.query(Invoice).filter(Invoice.id == invoice_id).first()
+    return db.query(Invoice).options(selectinload(Invoice.document)).filter(Invoice.id == invoice_id).first()
 
 def list_invoices(db: Session, skip: int = 0, limit: int = 100) -> List[Invoice]:
-    return db.query(Invoice).offset(skip).limit(limit).all()
+    return db.query(Invoice).options(selectinload(Invoice.document)).offset(skip).limit(limit).all()
 
 def update_invoice(db: Session, invoice_id: int, invoice_in: InvoiceUpdate) -> Invoice:
     db_invoice = get_invoice(db, invoice_id)

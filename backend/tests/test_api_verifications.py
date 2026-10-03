@@ -58,6 +58,7 @@ def test_api_verify_invoice():
     data = response.json()
     assert data["status"] == "FAILED"
     assert len(data["exceptions"]) > 0
+    assert data["exceptions"][0]["resolved"] is False
     
 def test_api_get_verification():
     inv_id = create_po_and_invoice()
@@ -67,6 +68,25 @@ def test_api_get_verification():
     assert response.status_code == 200
     data = response.json()
     assert data["status"] == "FAILED"
+    assert len(data["exceptions"]) > 0
+    
+    # Test resolving an exception
+    exc_id = data["exceptions"][0]["id"]
+    resolve_resp = client.post(
+        f"/api/v1/invoices/{inv_id}/exceptions/{exc_id}/resolve",
+        json={"actor": "Test User"}
+    )
+    assert resolve_resp.status_code == 200
+    resolve_data = resolve_resp.json()
+    assert resolve_data["resolved"] == True
+    
+    # Check verification again to see resolved = True
+    response_after = client.get(f"/api/v1/invoices/{inv_id}/verification")
+    data_after = response_after.json()
+    
+    resolved_exc = next((e for e in data_after["exceptions"] if e["id"] == exc_id), None)
+    assert resolved_exc is not None
+    assert resolved_exc["resolved"] == True
     
 def test_api_verification_not_found():
     # An invoice exists but not verified
