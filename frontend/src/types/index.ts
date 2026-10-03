@@ -43,12 +43,25 @@ export interface Vendor {
   updated_at: string;
 }
 
+export type POStatus = 'PENDING' | 'APPROVED' | 'REJECTED' | 'COMPLETED';
+
+export interface PurchaseOrderItem {
+  id: number;
+  po_id: number;
+  description: string;
+  quantity: string;
+  unit_price: string;
+  total_price: string;
+}
+
 export interface PurchaseOrder {
   id: number;
   vendor_id: number;
   po_number: string;
   issue_date: string; // YYYY-MM-DD
   total_amount: string; // Decimal
+  status: POStatus;
+  items: PurchaseOrderItem[];
   is_active: boolean;
   created_at: string;
   updated_at: string;
@@ -82,6 +95,12 @@ export interface ExceptionResolveResponse {
 
 export interface ReviewCreate {
   status: 'VERIFIED' | 'DISPUTED';
+  actor: string;
+  comment?: string | null;
+}
+
+export interface PurchaseOrderLinkCreate {
+  po_id: number;
   actor: string;
   comment?: string | null;
 }

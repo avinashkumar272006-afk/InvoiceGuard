@@ -11,8 +11,10 @@ import {
   useInvoiceVerification, 
   useVerifyInvoice, 
   useResolveException, 
-  useReviewInvoice 
+  useReviewInvoice,
+  useLinkPurchaseOrder
 } from "@/hooks/use-invoice";
+import { usePurchaseOrders } from "@/hooks/use-purchase-orders";
 import { useDocumentUrl } from "@/hooks/use-document-url";
 import { useAuditLogs } from "@/hooks/use-audit-logs";
 import { ApiError } from "@/lib/api";
@@ -161,6 +163,14 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
   const [reviewComment, setReviewComment] = useState("");
   const [activeExceptionId, setActiveExceptionId] = useState<number | null>(null);
 
+  const { data: purchaseOrders, isLoading: isPOLoading } = usePurchaseOrders();
+  const linkPOMutation = useLinkPurchaseOrder();
+  
+  const [linkPOId, setLinkPOId] = useState<string>("");
+  const [linkActor, setLinkActor] = useState("");
+  const [linkComment, setLinkComment] = useState("");
+  const [isLinkDialogOpen, setIsLinkDialogOpen] = useState(false);
+
   if (is404) {
     return (
       <div className="flex flex-col items-center justify-center py-20 text-center space-y-4">
@@ -225,6 +235,25 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
       onSuccess: () => {
         setReviewActor("");
         setReviewComment("");
+      }
+    });
+  };
+
+  const handleLinkPO = () => {
+    if (!linkPOId || !linkActor.trim()) return;
+    linkPOMutation.mutate({
+      invoiceId: id,
+      data: {
+        po_id: parseInt(linkPOId, 10),
+        actor: linkActor,
+        comment: linkComment || null
+      }
+    }, {
+      onSuccess: () => {
+        setLinkPOId("");
+        setLinkActor("");
+        setLinkComment("");
+        setIsLinkDialogOpen(false);
       }
     });
   };
@@ -297,6 +326,102 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
                   </div>
                 </div>
               ) : null}
+            </CardContent>
+          </Card>
+
+          {/* Purchase Order Linking */}
+          <Card>
+            <CardHeader>
+              <CardTitle>Purchase Order</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {isLoading || isPOLoading ? (
+                <div className="h-20 bg-muted/50 rounded animate-pulse" />
+              ) : (
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm font-medium">Currently Linked PO</p>
+                      <p className="text-sm text-muted-foreground">
+                        {invoice?.po_id ? `PO ID: ${invoice.po_id}` : "No purchase order linked."}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="grid gap-4 bg-muted/10 p-4 border rounded-md">
+                    <div>
+                      <label className="text-sm font-medium mb-1 block">Select Purchase Order</label>
+                      <select 
+                        className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                        value={linkPOId}
+                        onChange={(e) => setLinkPOId(e.target.value)}
+                        disabled={linkPOMutation.isPending}
+                      >
+                        <option value="">Select a PO...</option>
+                        {purchaseOrders?.map(po => (
+                          <option key={po.id} value={po.id}>PO #{po.po_number} (Vendor {po.vendor_id})</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="text-sm font-medium mb-1 block">Reviewer Name <span className="text-destructive">*</span></label>
+                      <Input 
+                        placeholder="Enter your name" 
+                        value={linkActor} 
+                        onChange={(e) => setLinkActor(e.target.value)}
+                        disabled={linkPOMutation.isPending}
+                      />
+                    </div>
+                    <div>
+                      <label className="text-sm font-medium mb-1 block">Reason for linking this PO (Optional)</label>
+                      <Input 
+                        placeholder="Review comment" 
+                        value={linkComment} 
+                        onChange={(e) => setLinkComment(e.target.value)}
+                        disabled={linkPOMutation.isPending}
+                      />
+                    </div>
+                    
+                    <Dialog open={isLinkDialogOpen} onOpenChange={setIsLinkDialogOpen}>
+                      <DialogTrigger render={
+                        <Button 
+                          className="w-full"
+                          disabled={!linkPOId || !linkActor.trim() || linkPOMutation.isPending}
+                        />
+                      }>
+                        {invoice?.po_id ? "Relink Purchase Order..." : "Link Purchase Order..."}
+                      </DialogTrigger>
+                      <DialogContent>
+                        <DialogHeader>
+                          <DialogTitle>Confirm Purchase Order Link</DialogTitle>
+                        </DialogHeader>
+                        <div className="space-y-4 py-4">
+                          <p className="text-sm">Are you sure you want to link this Purchase Order to the invoice? This will automatically rerun verification.</p>
+                          <div className="text-sm bg-muted p-3 rounded-md space-y-2">
+                            <p><strong>Invoice:</strong> {invoice?.invoice_number} (ID: {invoice?.id})</p>
+                            <p><strong>Selected PO ID:</strong> {linkPOId}</p>
+                            <p><strong>Actor:</strong> {linkActor}</p>
+                            <p><strong>Comment:</strong> {linkComment || "None"}</p>
+                          </div>
+                          {linkPOMutation.isError && (
+                            <div className="text-sm text-destructive bg-destructive/10 p-3 rounded-md">
+                              {linkPOMutation.error instanceof ApiError ? (linkPOMutation.error.data as Record<string, unknown>)?.detail as string || "Failed to link PO." : "An error occurred."}
+                            </div>
+                          )}
+                          <div className="flex justify-end gap-3 mt-4">
+                            <Button variant="outline" disabled={linkPOMutation.isPending} onClick={() => setIsLinkDialogOpen(false)}>
+                              Cancel
+                            </Button>
+                            <Button onClick={handleLinkPO} disabled={linkPOMutation.isPending}>
+                              {linkPOMutation.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                              Confirm / Link PO
+                            </Button>
+                          </div>
+                        </div>
+                      </DialogContent>
+                    </Dialog>
+                  </div>
+                </div>
+              )}
             </CardContent>
           </Card>
 

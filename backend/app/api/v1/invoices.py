@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from typing import List
 from sqlalchemy.orm import Session
 from app.database.connection import get_db
-from app.schemas.invoice import InvoiceCreate, InvoiceUpdate, InvoiceRead
+from app.schemas.invoice import InvoiceCreate, InvoiceUpdate, InvoiceRead, InvoiceLinkPO
 from app.services import invoice as invoice_service
 
 router = APIRouter()
@@ -38,6 +38,22 @@ def update_invoice(invoice_id: int, invoice_in: InvoiceUpdate, db: Session = Dep
         db.commit()
         return invoice
     except invoice_service.InvoiceNotFoundError as e:
+        db.rollback()
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+    except Exception:
+        db.rollback()
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Internal server error")
+
+@router.post("/{invoice_id}/link-po", response_model=InvoiceRead)
+def link_invoice_to_purchase_order(invoice_id: int, data: InvoiceLinkPO, db: Session = Depends(get_db)):
+    try:
+        invoice = invoice_service.link_invoice_to_purchase_order(db, invoice_id, data)
+        db.commit()
+        return invoice
+    except invoice_service.InvoiceNotFoundError as e:
+        db.rollback()
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+    except invoice_service.PurchaseOrderNotFoundError as e:
         db.rollback()
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
     except Exception:

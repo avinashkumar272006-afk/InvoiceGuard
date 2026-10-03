@@ -1,6 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api, ApiError } from '@/lib/api';
-import type { Invoice, Verification, ExceptionResolveCreate, ExceptionResolveResponse, ReviewCreate } from '@/types';
+import type { Invoice, Verification, ExceptionResolveCreate, ExceptionResolveResponse, ReviewCreate, PurchaseOrderLinkCreate } from '@/types';
 
 export function useInvoice(id: string) {
   return useQuery({
@@ -65,3 +65,18 @@ export function useReviewInvoice() {
     },
   });
 }
+
+export function useLinkPurchaseOrder() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ invoiceId, data }: { invoiceId: string | number; data: PurchaseOrderLinkCreate }) =>
+      api.post<Invoice>(`/api/v1/invoices/${invoiceId}/link-po`, data),
+    onSuccess: (data, variables) => {
+      queryClient.invalidateQueries({ queryKey: ['invoice', String(variables.invoiceId)] });
+      queryClient.invalidateQueries({ queryKey: ['invoice-verification', String(variables.invoiceId)] });
+      queryClient.invalidateQueries({ queryKey: ['invoice-audit-logs', String(variables.invoiceId)] });
+    },
+  });
+}
+

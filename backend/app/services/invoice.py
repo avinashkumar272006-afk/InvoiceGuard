@@ -2,12 +2,18 @@ from typing import List, Optional
 from sqlalchemy.orm import Session, selectinload
 from sqlalchemy.exc import IntegrityError
 from app.models.invoice import Invoice, InvoiceItem
-from app.schemas.invoice import InvoiceCreate, InvoiceUpdate
+from app.models.purchase_order import PurchaseOrder
+from app.models.audit import AuditLog
+from app.schemas.invoice import InvoiceCreate, InvoiceUpdate, InvoiceLinkPO
+from app.services.verification import verify_invoice
 
 class InvoiceNotFoundError(Exception):
     pass
 
 class InvoiceAlreadyExistsError(Exception):
+    pass
+
+class PurchaseOrderNotFoundError(Exception):
     pass
 
 def create_invoice(db: Session, invoice_in: InvoiceCreate) -> Invoice:
@@ -42,4 +48,40 @@ def update_invoice(db: Session, invoice_id: int, invoice_in: InvoiceUpdate) -> I
         setattr(db_invoice, key, value)
         
     db.flush()
+    return db_invoice
+
+def link_invoice_to_purchase_order(db: Session, invoice_id: int, data: InvoiceLinkPO) -> Invoice:
+    db_invoice = get_invoice(db, invoice_id)
+    if not db_invoice:
+        raise InvoiceNotFoundError(f"Invoice with id {invoice_id} not found.")
+
+    po = db.query(PurchaseOrder).filter(PurchaseOrder.id == data.po_id).first()
+    if not po:
+        raise PurchaseOrderNotFoundError(f"Purchase order with id {data.po_id} not found.")
+
+    previous_po_id = db_invoice.po_id
+    
+    # We allow re-linking. If it's the same PO, we can just return early or proceed to re-verify. 
+    # Let's proceed normally to ensure verification is up to date and audit is recorded.
+    
+    db_invoice.po_id = po.id
+
+    # Create audit log
+    audit = AuditLog(
+        invoice_id=db_invoice.id,
+        actor=data.actor,
+        action="PO_LINKED",
+        entity_name="INVOICE",
+        entity_id=db_invoice.id,
+        previous_state=f"PO: {previous_po_id}" if previous_po_id is not None else "PO: None",
+        new_state=f"PO: {po.id}",
+        comment=data.comment
+    )
+    db.add(audit)
+    
+    db.flush()
+
+    # Re-verify the invoice
+    verify_invoice(db, db_invoice.id)
+
     return db_invoice

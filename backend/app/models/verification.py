@@ -37,9 +37,11 @@ class InvoiceException(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     verification_id: Mapped[int] = mapped_column(ForeignKey("verifications.id", ondelete="CASCADE"), nullable=False, index=True)
+    line_item_id: Mapped[int | None] = mapped_column(ForeignKey("invoice_items.id", ondelete="CASCADE"), nullable=True, index=True)
     exception_type: Mapped[ExceptionType] = mapped_column(Enum(ExceptionType, name="exceptiontype", create_type=False), nullable=False, index=True)
     description: Mapped[str] = mapped_column(String(1000), nullable=False)
     resolved: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
 
     # Relationships
     verification: Mapped["Verification"] = relationship("Verification", back_populates="exceptions")
+    line_item: Mapped["InvoiceItem"] = relationship("InvoiceItem")

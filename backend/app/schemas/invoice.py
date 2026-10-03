@@ -40,3 +40,8 @@ class InvoiceRead(InvoiceBase):
     document_id: Optional[uuid.UUID] = Field(default=None, validation_alias=AliasPath("document", "id"))
 
     model_config = ConfigDict(from_attributes=True)
+
+class InvoiceLinkPO(BaseModel):
+    po_id: int
+    actor: str = Field(..., max_length=255)
+    comment: Optional[str] = Field(None, max_length=1000)
