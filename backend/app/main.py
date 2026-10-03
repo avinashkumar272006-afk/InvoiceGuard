@@ -3,6 +3,7 @@ import uuid
 import logging
 from fastapi import FastAPI, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse
+from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
 from sqlalchemy.orm import Session
 from sqlalchemy import text
@@ -47,6 +48,16 @@ app = FastAPI(
     title=settings.app_name,
     description="Invoice Exception & Verification API",
     version=settings.app_version,
+)
+
+origins = [origin.strip() for origin in settings.frontend_origins.split(",") if origin.strip()]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 app.add_middleware(RequestLoggingMiddleware)

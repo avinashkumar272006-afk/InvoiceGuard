@@ -8,6 +8,7 @@ class Settings(BaseSettings):
     supabase_url: str = ""
     supabase_service_key: str = ""
     log_level: str = "INFO"
+    frontend_origins: str = "http://localhost:3000"
 
     model_config = {"env_file": ".env", "extra": "ignore"}
 
