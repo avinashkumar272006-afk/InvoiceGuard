@@ -309,20 +309,54 @@ def create_service_test_data(db: Session):
     
     return vendor.id, po.id, po.items[0].id, inv.id, inv.items[0].id
 
-def test_transaction_safety_mapping(db_session: Session):
-    vendor_id, po_id, po_item_id, inv_id, inv_item_id = create_service_test_data(db_session)
-    
-    data = InvoiceItemMapPO(po_item_id=po_item_id, actor="trans@test.com")
+def test_transaction_safety_mapping():
+    data = create_api_test_data()
+    payload = {
+        "po_item_id": data["po_item_a_id"],
+        "actor": "trans@test.com",
+        "comment": "Should rollback"
+    }
     
     with patch('app.services.invoice.verify_invoice') as mock_verify:
         mock_verify.side_effect = Exception("Verification failed horribly")
-        try:
-            with db_session.begin_nested():
-                map_invoice_item_to_po_item(db_session, inv_id, inv_item_id, data)
-        except Exception as e:
-            assert str(e) == "Verification failed horribly"
+        resp = client.post(f"/api/v1/invoices/{data['inv_id']}/items/{data['inv_item_a_id']}/map", json=payload)
+        assert resp.status_code == 500
             
-    inv_item = db_session.query(InvoiceItem).filter(InvoiceItem.id == inv_item_id).first()
-    assert inv_item.po_item_id is None
-    logs = db_session.query(AuditLog).filter(AuditLog.invoice_id == inv_id, AuditLog.actor == "trans@test.com").all()
-    assert len(logs) == 0
+    # Use a new request to verify the database state remained unchanged
+    resp_inv = client.get(f"/api/v1/invoices/{data['inv_id']}")
+    assert resp_inv.status_code == 200
+    inv = resp_inv.json()
+    item = next(i for i in inv["items"] if i["id"] == data["inv_item_a_id"])
+    assert item["po_item_id"] is None
+    
+    audit_resp = client.get(f"/api/v1/invoices/{data['inv_id']}/audit-logs")
+    logs = audit_resp.json()
+    map_logs = [log for log in logs if log["actor"] == "trans@test.com" and log["action"] == "PO_LINE_MAPPED"]
+    assert len(map_logs) == 0
+
+def test_transaction_safety_unmapping():
+    data = create_api_test_data()
+    # Map it first
+    client.post(f"/api/v1/invoices/{data['inv_id']}/items/{data['inv_item_a_id']}/map", json={"po_item_id": data["po_item_a_id"], "actor": "setup@test.com"})
+    
+    payload = {
+        "actor": "trans_unmap@test.com",
+        "comment": "Should rollback"
+    }
+    
+    with patch('app.services.invoice.verify_invoice') as mock_verify:
+        mock_verify.side_effect = Exception("Verification failed horribly")
+        resp = client.post(f"/api/v1/invoices/{data['inv_id']}/items/{data['inv_item_a_id']}/unmap", json=payload)
+        assert resp.status_code == 500
+            
+    # Use a new request to verify the database state remained unchanged
+    resp_inv = client.get(f"/api/v1/invoices/{data['inv_id']}")
+    assert resp_inv.status_code == 200
+    inv = resp_inv.json()
+    item = next(i for i in inv["items"] if i["id"] == data["inv_item_a_id"])
+    assert item["po_item_id"] == data["po_item_a_id"]
+    
+    audit_resp = client.get(f"/api/v1/invoices/{data['inv_id']}/audit-logs")
+    logs = audit_resp.json()
+    unmap_logs = [log for log in logs if log["actor"] == "trans_unmap@test.com" and log["action"] == "PO_LINE_UNMAPPED"]
+    assert len(unmap_logs) == 0
