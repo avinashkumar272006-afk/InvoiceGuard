@@ -18,6 +18,7 @@ export interface InvoiceItem {
   quantity: string;
   unit_price: string;
   total_price: string;
+  po_item_id?: number | null;
 }
 
 export interface Invoice {
@@ -74,7 +75,7 @@ export interface DocumentUrlResponse {
 }
 
 export type VerificationStatus = 'PASSED' | 'FAILED' | 'PENDING';
-export type ExceptionType = 'PRICE_MISMATCH' | 'QUANTITY_MISMATCH' | 'NOT_ON_PO' | 'PO_NOT_FOUND' | 'MATH_ERROR';
+export type ExceptionType = 'PRICE_MISMATCH' | 'QUANTITY_MISMATCH' | 'NOT_ON_PO' | 'PO_NOT_FOUND' | 'MATH_ERROR' | 'VENDOR_UNRESOLVED';
 
 export interface InvoiceException {
   id: number;
@@ -82,6 +83,7 @@ export interface InvoiceException {
   exception_type: ExceptionType;
   description: string;
   resolved: boolean;
+  line_item_id?: number | null;
 }
 
 export interface ExceptionResolveCreate {

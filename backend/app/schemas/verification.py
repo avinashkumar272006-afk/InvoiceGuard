@@ -9,6 +9,7 @@ class InvoiceExceptionRead(BaseModel):
     exception_type: ExceptionType
     description: str
     resolved: bool
+    line_item_id: int | None = None
 
     model_config = ConfigDict(from_attributes=True)
 

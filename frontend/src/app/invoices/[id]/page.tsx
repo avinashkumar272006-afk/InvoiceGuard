@@ -13,7 +13,9 @@ import {
   useResolveException, 
   useReviewInvoice,
   useLinkPurchaseOrder,
-  useLinkVendor
+  useLinkVendor,
+  useMapInvoiceItem,
+  useUnmapInvoiceItem
 } from "@/hooks/use-invoice";
 import { useVendors } from "@/hooks/use-vendors";
 import { usePurchaseOrders } from "@/hooks/use-purchase-orders";
@@ -181,6 +183,19 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
   const [linkVendorComment, setLinkVendorComment] = useState("");
   const [isVendorLinkDialogOpen, setIsVendorLinkDialogOpen] = useState(false);
 
+  const [mapItemId, setMapItemId] = useState<number | null>(null);
+  const [mapPOItemId, setMapPOItemId] = useState<string>("");
+  const [mapActor, setMapActor] = useState("");
+  const [mapComment, setMapComment] = useState("");
+  const mapMutation = useMapInvoiceItem();
+
+  const [unmapItemId, setUnmapItemId] = useState<number | null>(null);
+  const [unmapActor, setUnmapActor] = useState("");
+  const [unmapComment, setUnmapComment] = useState("");
+  const unmapMutation = useUnmapInvoiceItem();
+
+  const linkedPO = invoice?.po_id ? purchaseOrders?.find(po => po.id === invoice.po_id) : undefined;
+
   if (is404) {
     return (
       <div className="flex flex-col items-center justify-center py-20 text-center space-y-4">
@@ -283,6 +298,44 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
         setLinkVendorActor("");
         setLinkVendorComment("");
         setIsVendorLinkDialogOpen(false);
+      }
+    });
+  };
+
+  const handleMapItem = () => {
+    if (!mapItemId || !mapPOItemId || !mapActor.trim()) return;
+    mapMutation.mutate({
+      invoiceId: id,
+      itemId: mapItemId,
+      data: {
+        po_item_id: parseInt(mapPOItemId, 10),
+        actor: mapActor,
+        comment: mapComment || undefined
+      }
+    }, {
+      onSuccess: () => {
+        setMapItemId(null);
+        setMapPOItemId("");
+        setMapActor("");
+        setMapComment("");
+      }
+    });
+  };
+
+  const handleUnmapItem = () => {
+    if (!unmapItemId || !unmapActor.trim()) return;
+    unmapMutation.mutate({
+      invoiceId: id,
+      itemId: unmapItemId,
+      data: {
+        actor: unmapActor,
+        comment: unmapComment || undefined
+      }
+    }, {
+      onSuccess: () => {
+        setUnmapItemId(null);
+        setUnmapActor("");
+        setUnmapComment("");
       }
     });
   };
@@ -596,6 +649,7 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
                         <TableHead className="text-right">Qty</TableHead>
                         <TableHead className="text-right">Unit Price</TableHead>
                         <TableHead className="text-right">Total Price</TableHead>
+                        <TableHead>Mapping</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -605,6 +659,25 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
                           <TableCell className="text-right tabular-nums">{item.quantity}</TableCell>
                           <TableCell className="text-right tabular-nums">{item.unit_price}</TableCell>
                           <TableCell className="text-right tabular-nums">{item.total_price}</TableCell>
+                          <TableCell>
+                            {item.po_item_id ? (
+                              <div className="flex items-center justify-between gap-2">
+                                <Badge variant="outline" className="bg-emerald-500/10 text-emerald-600 border-emerald-200">
+                                  Mapped to PO Item {item.po_item_id}
+                                </Badge>
+                                <div className="flex gap-1">
+                                  <Button size="sm" variant="outline" className="h-6 text-xs px-2" onClick={() => setMapItemId(item.id)}>
+                                    Change
+                                  </Button>
+                                  <Button size="sm" variant="ghost" className="h-6 text-xs px-2 text-destructive" onClick={() => setUnmapItemId(item.id)}>
+                                    Unmap
+                                  </Button>
+                                </div>
+                              </div>
+                            ) : (
+                              <span className="text-xs text-muted-foreground italic">Unmapped</span>
+                            )}
+                          </TableCell>
                         </TableRow>
                       ))}
                     </TableBody>
@@ -811,6 +884,12 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
                     </div>
                     <p className={`text-sm mb-3 ${exc.resolved ? 'text-muted-foreground' : ''}`}>{exc.description}</p>
                     
+                    {!exc.resolved && exc.exception_type === 'NOT_ON_PO' && exc.line_item_id && invoice?.po_id && (
+                      <Button size="sm" variant="outline" className="w-full mb-2" onClick={() => setMapItemId(exc.line_item_id as number)}>
+                        Map to PO Item
+                      </Button>
+                    )}
+                    
                     {!exc.resolved && (
                       <Dialog open={activeExceptionId === exc.id} onOpenChange={(isOpen) => isOpen ? setActiveExceptionId(exc.id) : setActiveExceptionId(null)}>
                         <DialogTrigger render={<Button size="sm" variant="outline" className="w-full" />}>
@@ -875,6 +954,126 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
           </Card>
         </div>
       </div>
+
+      {/* Shared Map Item Dialog */}
+      <Dialog open={mapItemId !== null} onOpenChange={(isOpen) => isOpen ? null : setMapItemId(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Map Invoice Line to PO Item</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="text-sm bg-muted p-3 rounded-md mb-4">
+              <p className="font-medium text-muted-foreground mb-1">Invoice Item</p>
+              {(() => {
+                const item = invoice?.items.find(i => i.id === mapItemId);
+                return item ? (
+                  <>
+                    <p>{item.description}</p>
+                    <p className="text-muted-foreground text-xs mt-1">Qty: {item.quantity} | Unit: {item.unit_price} | Total: {item.total_price}</p>
+                  </>
+                ) : <p>Item details unavailable</p>;
+              })()}
+            </div>
+            
+            <div>
+              <label className="text-sm font-medium mb-1 block">Select PO Item <span className="text-destructive">*</span></label>
+              <select 
+                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                value={mapPOItemId}
+                onChange={(e) => setMapPOItemId(e.target.value)}
+                disabled={mapMutation.isPending || !linkedPO}
+              >
+                <option value="">[ Select PO Item ▼ ]</option>
+                {linkedPO?.items.map(poItem => (
+                  <option key={poItem.id} value={poItem.id}>
+                    {poItem.description} (Qty: {poItem.quantity}, Total: {poItem.total_price})
+                  </option>
+                ))}
+              </select>
+              {!linkedPO && <p className="text-xs text-destructive mt-1">No Purchase Order is linked to this invoice.</p>}
+            </div>
+            
+            <div>
+              <label className="text-sm font-medium mb-1 block">Actor <span className="text-destructive">*</span></label>
+              <Input 
+                placeholder="Enter your name" 
+                value={mapActor} 
+                onChange={(e) => setMapActor(e.target.value)}
+                disabled={mapMutation.isPending}
+              />
+            </div>
+            <div>
+              <label className="text-sm font-medium mb-1 block">Comment (Optional)</label>
+              <Input 
+                placeholder="Add a comment" 
+                value={mapComment} 
+                onChange={(e) => setMapComment(e.target.value)}
+                disabled={mapMutation.isPending}
+              />
+            </div>
+            
+            {mapMutation.isError && (
+              <div className="p-3 text-sm text-destructive bg-destructive/10 rounded-md">
+                {mapMutation.error instanceof ApiError ? (mapMutation.error.data as Record<string, unknown>)?.detail as string || "Mapping failed" : "Error"}
+              </div>
+            )}
+            
+            <div className="flex justify-end gap-3 mt-4">
+              <Button variant="outline" disabled={mapMutation.isPending} onClick={() => setMapItemId(null)}>
+                Cancel
+              </Button>
+              <Button onClick={handleMapItem} disabled={!mapPOItemId || !mapActor.trim() || mapMutation.isPending}>
+                {mapMutation.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                Confirm Mapping
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Shared Unmap Item Dialog */}
+      <Dialog open={unmapItemId !== null} onOpenChange={(isOpen) => isOpen ? null : setUnmapItemId(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Unmap PO Item</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <p className="text-sm">Are you sure you want to unmap this line item?</p>
+            <div>
+              <label className="text-sm font-medium mb-1 block">Actor <span className="text-destructive">*</span></label>
+              <Input 
+                placeholder="Enter your name" 
+                value={unmapActor} 
+                onChange={(e) => setUnmapActor(e.target.value)}
+                disabled={unmapMutation.isPending}
+              />
+            </div>
+            <div>
+              <label className="text-sm font-medium mb-1 block">Comment (Optional)</label>
+              <Input 
+                placeholder="Add a comment" 
+                value={unmapComment} 
+                onChange={(e) => setUnmapComment(e.target.value)}
+                disabled={unmapMutation.isPending}
+              />
+            </div>
+            {unmapMutation.isError && (
+              <div className="p-3 text-sm text-destructive bg-destructive/10 rounded-md">
+                {unmapMutation.error instanceof ApiError ? (unmapMutation.error.data as Record<string, unknown>)?.detail as string || "Unmapping failed" : "Error"}
+              </div>
+            )}
+            <div className="flex justify-end gap-3 mt-4">
+              <Button variant="outline" disabled={unmapMutation.isPending} onClick={() => setUnmapItemId(null)}>
+                Cancel
+              </Button>
+              <Button onClick={handleUnmapItem} disabled={!unmapActor.trim() || unmapMutation.isPending}>
+                {unmapMutation.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                Confirm Unmap
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

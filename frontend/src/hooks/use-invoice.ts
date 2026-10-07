@@ -100,3 +100,44 @@ export function useLinkVendor() {
     },
   });
 }
+
+export interface ItemMapCreate {
+  po_item_id: number;
+  actor: string;
+  comment?: string;
+}
+
+export function useMapInvoiceItem() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ invoiceId, itemId, data }: { invoiceId: string | number; itemId: number; data: ItemMapCreate }) =>
+      api.post<Invoice>(`/api/v1/invoices/${invoiceId}/items/${itemId}/map`, data),
+    onSuccess: (data, variables) => {
+      queryClient.invalidateQueries({ queryKey: ['invoice', String(variables.invoiceId)] });
+      queryClient.invalidateQueries({ queryKey: ['invoice-verification', String(variables.invoiceId)] });
+      queryClient.invalidateQueries({ queryKey: ['invoice-audit-logs', String(variables.invoiceId)] });
+      queryClient.invalidateQueries({ queryKey: ['invoices'] });
+    },
+  });
+}
+
+export interface ItemUnmapCreate {
+  actor: string;
+  comment?: string;
+}
+
+export function useUnmapInvoiceItem() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ invoiceId, itemId, data }: { invoiceId: string | number; itemId: number; data: ItemUnmapCreate }) =>
+      api.post<Invoice>(`/api/v1/invoices/${invoiceId}/items/${itemId}/unmap`, data),
+    onSuccess: (data, variables) => {
+      queryClient.invalidateQueries({ queryKey: ['invoice', String(variables.invoiceId)] });
+      queryClient.invalidateQueries({ queryKey: ['invoice-verification', String(variables.invoiceId)] });
+      queryClient.invalidateQueries({ queryKey: ['invoice-audit-logs', String(variables.invoiceId)] });
+      queryClient.invalidateQueries({ queryKey: ['invoices'] });
+    },
+  });
+}
