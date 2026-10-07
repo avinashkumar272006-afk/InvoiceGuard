@@ -139,23 +139,17 @@ class BusinessValidationService:
                     tax_v_norm = _normalize_string(resolved_by_tax.name)
                     req_v_norm = _normalize_string(extracted.vendor_name_raw)
                     if tax_v_norm != req_v_norm:
-                        issues.append(BusinessValidationIssue(code="VENDOR_MISMATCH", message="Tax ID vendor name does not match extracted vendor name", field="vendor"))
+                        # Tax ID matches, but name doesn't match. Leave unresolved instead of failing.
                         resolved_vendor_id = None
             elif extracted.vendor_tax_id and not resolved_by_tax:
                 if resolved_by_name:
                     if len(resolved_by_name) == 1:
                         resolved_vendor_id = resolved_by_name[0].id
-                    else:
-                        issues.append(BusinessValidationIssue(code="VENDOR_AMBIGUOUS", message="Multiple vendors match the name", field="vendor"))
-                else:
-                    issues.append(BusinessValidationIssue(code="VENDOR_NOT_FOUND", message="Vendor not found", field="vendor"))
+                    # If ambiguous or not found, we simply leave resolved_vendor_id as None.
             else:
                 if len(resolved_by_name) == 1:
                     resolved_vendor_id = resolved_by_name[0].id
-                elif len(resolved_by_name) > 1:
-                    issues.append(BusinessValidationIssue(code="VENDOR_AMBIGUOUS", message="Multiple vendors match the name", field="vendor"))
-                else:
-                    issues.append(BusinessValidationIssue(code="VENDOR_NOT_FOUND", message="Vendor not found", field="vendor"))
+                # If ambiguous or not found, we simply leave resolved_vendor_id as None.
 
         # Invoice duplicate check
         if not extracted.invoice_number:
@@ -169,6 +163,7 @@ class BusinessValidationService:
         return BusinessValidationResult(
             is_valid=len(issues) == 0,
             vendor_id=resolved_vendor_id,
+            vendor_name_raw=extracted.vendor_name_raw,
             parsed_issue_date=parsed_date,
             parsed_subtotal=subtotal,
             parsed_tax_amount=tax_amount,

@@ -23,7 +23,8 @@ export interface InvoiceItem {
 export interface Invoice {
   id: number;
   invoice_number: string;
-  vendor_id: number;
+  vendor_id: number | null;
+  vendor_name_raw: string | null;
   po_id: number | null;
   issue_date: string;
   total_amount: string;

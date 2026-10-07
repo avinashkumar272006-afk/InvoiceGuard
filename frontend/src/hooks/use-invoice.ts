@@ -80,3 +80,23 @@ export function useLinkPurchaseOrder() {
   });
 }
 
+export interface VendorLinkCreate {
+  vendor_id: number;
+  actor: string;
+  comment?: string | null;
+}
+
+export function useLinkVendor() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ invoiceId, data }: { invoiceId: string | number; data: VendorLinkCreate }) =>
+      api.post<Invoice>(`/api/v1/invoices/${invoiceId}/link-vendor`, data),
+    onSuccess: (data, variables) => {
+      queryClient.invalidateQueries({ queryKey: ['invoice', String(variables.invoiceId)] });
+      queryClient.invalidateQueries({ queryKey: ['invoice-verification', String(variables.invoiceId)] });
+      queryClient.invalidateQueries({ queryKey: ['invoice-audit-logs', String(variables.invoiceId)] });
+      queryClient.invalidateQueries({ queryKey: ['invoices'] });
+    },
+  });
+}

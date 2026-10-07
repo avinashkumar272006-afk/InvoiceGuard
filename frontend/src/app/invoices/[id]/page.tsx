@@ -12,8 +12,10 @@ import {
   useVerifyInvoice, 
   useResolveException, 
   useReviewInvoice,
-  useLinkPurchaseOrder
+  useLinkPurchaseOrder,
+  useLinkVendor
 } from "@/hooks/use-invoice";
+import { useVendors } from "@/hooks/use-vendors";
 import { usePurchaseOrders } from "@/hooks/use-purchase-orders";
 import { useDocumentUrl } from "@/hooks/use-document-url";
 import { useAuditLogs } from "@/hooks/use-audit-logs";
@@ -171,6 +173,14 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
   const [linkComment, setLinkComment] = useState("");
   const [isLinkDialogOpen, setIsLinkDialogOpen] = useState(false);
 
+  const { data: vendors, isLoading: isVendorsLoading } = useVendors();
+  const linkVendorMutation = useLinkVendor();
+
+  const [linkVendorId, setLinkVendorId] = useState<string>("");
+  const [linkVendorActor, setLinkVendorActor] = useState("");
+  const [linkVendorComment, setLinkVendorComment] = useState("");
+  const [isVendorLinkDialogOpen, setIsVendorLinkDialogOpen] = useState(false);
+
   if (is404) {
     return (
       <div className="flex flex-col items-center justify-center py-20 text-center space-y-4">
@@ -258,6 +268,25 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
     });
   };
 
+  const handleLinkVendor = () => {
+    if (!linkVendorId || !linkVendorActor.trim()) return;
+    linkVendorMutation.mutate({
+      invoiceId: id,
+      data: {
+        vendor_id: parseInt(linkVendorId, 10),
+        actor: linkVendorActor,
+        comment: linkVendorComment || null
+      }
+    }, {
+      onSuccess: () => {
+        setLinkVendorId("");
+        setLinkVendorActor("");
+        setLinkVendorComment("");
+        setIsVendorLinkDialogOpen(false);
+      }
+    });
+  };
+
   const isVerification404 = verificationError instanceof ApiError && verificationError.status === 404;
 
   return (
@@ -326,6 +355,127 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
                   </div>
                 </div>
               ) : null}
+            </CardContent>
+          </Card>
+
+          {/* Vendor Linking */}
+          <Card>
+            <CardHeader>
+              <CardTitle>Vendor</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {isLoading || isVendorsLoading ? (
+                <div className="h-20 bg-muted/50 rounded animate-pulse" />
+              ) : (
+                <div className="space-y-4">
+                  <div className="flex flex-col gap-2">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-sm font-medium">Extracted name:</p>
+                        <p className="text-sm text-muted-foreground">{invoice?.vendor_name_raw || "Not found"}</p>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-sm font-medium">Status:</p>
+                        {invoice?.vendor_id !== null ? (
+                          <Badge variant="default" className="bg-emerald-600 hover:bg-emerald-700 mt-1">Resolved</Badge>
+                        ) : (
+                          <Badge variant="destructive" className="mt-1">Vendor unresolved</Badge>
+                        )}
+                      </div>
+                    </div>
+                    {invoice?.vendor_id !== null && (
+                      <div>
+                        <p className="text-sm font-medium">Linked Vendor:</p>
+                        <p className="text-sm text-muted-foreground">
+                          {vendors?.find(v => v.id === invoice?.vendor_id)?.name || `ID: ${invoice?.vendor_id}`}
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                  
+                  {invoice?.vendor_id === null && (
+                    <div className="grid gap-4 bg-muted/10 p-4 border rounded-md">
+                      <div>
+                        <label className="text-sm font-medium mb-1 block">Select Vendor:</label>
+                        <select 
+                          className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                          value={linkVendorId}
+                          onChange={(e) => setLinkVendorId(e.target.value)}
+                          disabled={linkVendorMutation.isPending}
+                        >
+                          <option value="">[ Select vendor ▼ ]</option>
+                          {vendors?.map(vendor => (
+                            <option key={vendor.id} value={vendor.id}>{vendor.name} (ID: {vendor.id})</option>
+                          ))}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="text-sm font-medium mb-1 block">Actor: <span className="text-destructive">*</span></label>
+                        <Input 
+                          placeholder="[ Reviewer name ]" 
+                          value={linkVendorActor} 
+                          onChange={(e) => setLinkVendorActor(e.target.value)}
+                          disabled={linkVendorMutation.isPending}
+                        />
+                      </div>
+                      <div>
+                        <label className="text-sm font-medium mb-1 block">Comment: (Optional)</label>
+                        <Input 
+                          placeholder="[ Optional reason ]" 
+                          value={linkVendorComment} 
+                          onChange={(e) => setLinkVendorComment(e.target.value)}
+                          disabled={linkVendorMutation.isPending}
+                        />
+                      </div>
+                      
+                      <Dialog open={isVendorLinkDialogOpen} onOpenChange={setIsVendorLinkDialogOpen}>
+                        <DialogTrigger render={
+                          <Button 
+                            className="w-full"
+                            disabled={!linkVendorId || !linkVendorActor.trim() || linkVendorMutation.isPending}
+                          />
+                        }>
+                          [ Link Vendor ]
+                        </DialogTrigger>
+                        <DialogContent>
+                          <DialogHeader>
+                            <DialogTitle>Link this invoice to the selected vendor?</DialogTitle>
+                          </DialogHeader>
+                          <div className="space-y-4 py-4">
+                            <p className="text-sm">Please confirm linking to the selected vendor.</p>
+                            <div className="text-sm bg-muted p-3 rounded-md space-y-2">
+                              <p><strong>Invoice Number:</strong> {invoice?.invoice_number || invoice?.id}</p>
+                              <p><strong>Selected Vendor:</strong> {vendors?.find(v => v.id.toString() === linkVendorId)?.name} (ID: {linkVendorId})</p>
+                              <p><strong>Actor:</strong> {linkVendorActor}</p>
+                              <p><strong>Comment:</strong> {linkVendorComment || "None"}</p>
+                            </div>
+                            {linkVendorMutation.isError && (
+                              <div className="text-sm text-destructive bg-destructive/10 p-3 rounded-md">
+                                {linkVendorMutation.error instanceof ApiError && linkVendorMutation.error.status === 409 
+                                  ? "This invoice cannot be linked to this vendor because an invoice with the same invoice number already exists for this vendor."
+                                  : linkVendorMutation.error instanceof ApiError && linkVendorMutation.error.status === 404
+                                  ? "Invoice or vendor could not be found."
+                                  : linkVendorMutation.error instanceof ApiError && linkVendorMutation.error.status === 422
+                                  ? "Please check the vendor and reviewer information."
+                                  : "An unexpected network or server error occurred."}
+                              </div>
+                            )}
+                            <div className="flex justify-end gap-3 mt-4">
+                              <Button variant="outline" disabled={linkVendorMutation.isPending} onClick={() => setIsVendorLinkDialogOpen(false)}>
+                                Cancel
+                              </Button>
+                              <Button onClick={handleLinkVendor} disabled={linkVendorMutation.isPending}>
+                                {linkVendorMutation.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                                Confirm
+                              </Button>
+                            </div>
+                          </div>
+                        </DialogContent>
+                      </Dialog>
+                    </div>
+                  )}
+                </div>
+              )}
             </CardContent>
           </Card>
 

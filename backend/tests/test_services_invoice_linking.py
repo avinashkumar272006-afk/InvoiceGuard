@@ -284,3 +284,142 @@ def test_exception_lifecycle_unrelated_new_exceptions(db_session: Session):
     
     price_exc = next(e for e in v2.exceptions if e.exception_type == ExceptionType.PRICE_MISMATCH)
     assert price_exc.resolved == False
+
+from app.schemas.invoice import InvoiceLinkVendor
+from app.services.invoice import link_invoice_to_vendor, VendorNotFoundError, InvoiceAlreadyExistsError
+
+def test_link_invoice_to_vendor_success(db_session: Session):
+    vendor_id, po_id, inv_id = create_test_vendor_po_inv(db_session, has_po=False)
+    inv = db_session.query(Invoice).filter(Invoice.id == inv_id).first()
+    inv.vendor_id = None
+    db_session.commit()
+    
+    data = InvoiceLinkVendor(vendor_id=vendor_id, actor="reviewer@test.com", comment="Assigning vendor")
+    updated_inv = link_invoice_to_vendor(db_session, inv_id, data)
+    assert updated_inv.vendor_id == vendor_id
+
+def test_link_invoice_to_vendor_creates_audit(db_session: Session):
+    vendor_id, po_id, inv_id = create_test_vendor_po_inv(db_session, has_po=False)
+    inv = db_session.query(Invoice).filter(Invoice.id == inv_id).first()
+    inv.vendor_id = None
+    db_session.commit()
+    
+    data = InvoiceLinkVendor(vendor_id=vendor_id, actor="audit@test.com", comment="Audited link")
+    link_invoice_to_vendor(db_session, inv_id, data)
+    
+    logs = db_session.query(AuditLog).filter(AuditLog.invoice_id == inv_id, AuditLog.action == "VENDOR_LINKED").all()
+    assert len(logs) == 1
+    log = logs[0]
+    assert log.actor == "audit@test.com"
+    assert log.previous_state == "Vendor: None"
+    assert log.new_state == f"Vendor: {vendor_id}"
+
+def test_link_invoice_to_vendor_reruns_verification(db_session: Session):
+    vendor_id, po_id, inv_id = create_test_vendor_po_inv(db_session, has_po=False)
+    inv = db_session.query(Invoice).filter(Invoice.id == inv_id).first()
+    inv.vendor_id = None
+    db_session.commit()
+    
+    verify_invoice(db_session, inv_id)
+    v1 = db_session.query(Verification).filter(Verification.invoice_id == inv_id).first()
+    v1_time = v1.verified_at if v1 else None
+
+    data = InvoiceLinkVendor(vendor_id=vendor_id, actor="ver@test.com")
+    link_invoice_to_vendor(db_session, inv_id, data)
+    
+    v2 = db_session.query(Verification).filter(Verification.invoice_id == inv_id).first()
+    assert v2 is not None
+
+def test_link_invoice_to_vendor_removes_unresolved_exception(db_session: Session):
+    vendor_id, po_id, inv_id = create_test_vendor_po_inv(db_session, has_po=False)
+    inv = db_session.query(Invoice).filter(Invoice.id == inv_id).first()
+    inv.vendor_id = None
+    db_session.commit()
+    
+    verify_invoice(db_session, inv_id)
+    v1 = db_session.query(Verification).filter(Verification.invoice_id == inv_id).first()
+    assert ExceptionType.VENDOR_UNRESOLVED in [e.exception_type for e in v1.exceptions]
+    
+    data = InvoiceLinkVendor(vendor_id=vendor_id, actor="reviewer@test.com")
+    link_invoice_to_vendor(db_session, inv_id, data)
+    
+    v2 = db_session.query(Verification).filter(Verification.invoice_id == inv_id).first()
+    assert ExceptionType.VENDOR_UNRESOLVED not in [e.exception_type for e in v2.exceptions]
+
+def test_link_invoice_to_vendor_preserves_other_exceptions(db_session: Session):
+    vendor_id, po_id, inv_id = create_test_vendor_po_inv(db_session, has_po=False)
+    inv = db_session.query(Invoice).filter(Invoice.id == inv_id).first()
+    inv.vendor_id = None
+    db_session.commit()
+    
+    data = InvoiceLinkVendor(vendor_id=vendor_id, actor="reviewer@test.com")
+    link_invoice_to_vendor(db_session, inv_id, data)
+    
+    v = db_session.query(Verification).filter(Verification.invoice_id == inv_id).first()
+    assert ExceptionType.PO_NOT_FOUND in [e.exception_type for e in v.exceptions]
+
+def test_link_invoice_to_vendor_same_vendor_is_safe(db_session: Session):
+    vendor_id, po_id, inv_id = create_test_vendor_po_inv(db_session, has_po=False)
+    
+    audits_before = db_session.query(AuditLog).filter(AuditLog.invoice_id == inv_id).count()
+    
+    data = InvoiceLinkVendor(vendor_id=vendor_id, actor="same@test.com")
+    link_invoice_to_vendor(db_session, inv_id, data)
+    
+    audits_after = db_session.query(AuditLog).filter(AuditLog.invoice_id == inv_id).count()
+    assert audits_after == audits_before
+
+def test_link_invoice_to_vendor_relink(db_session: Session):
+    vendor_id, po_id, inv_id = create_test_vendor_po_inv(db_session, has_po=False)
+    
+    vendor_2 = Vendor(name="Link Vendor 2", tax_id=f"TAX-L2-{uuid.uuid4().hex[:6]}", contact_email="testlink2@vendor.com")
+    db_session.add(vendor_2)
+    db_session.commit()
+    
+    data = InvoiceLinkVendor(vendor_id=vendor_2.id, actor="relink@test.com")
+    link_invoice_to_vendor(db_session, inv_id, data)
+    
+    logs = db_session.query(AuditLog).filter(AuditLog.invoice_id == inv_id, AuditLog.action == "VENDOR_LINKED").order_by(AuditLog.created_at.desc()).all()
+    log = logs[0]
+    assert log.previous_state == f"Vendor: {vendor_id}"
+    assert log.new_state == f"Vendor: {vendor_2.id}"
+    
+    inv = db_session.query(Invoice).filter(Invoice.id == inv_id).first()
+    assert inv.vendor_id == vendor_2.id
+
+def test_link_invoice_to_vendor_missing_invoice(db_session: Session):
+    data = InvoiceLinkVendor(vendor_id=1, actor="test@test.com")
+    with pytest.raises(InvoiceNotFoundError):
+        link_invoice_to_vendor(db_session, 999999, data)
+
+def test_link_invoice_to_vendor_missing_vendor(db_session: Session):
+    vendor_id, po_id, inv_id = create_test_vendor_po_inv(db_session, has_po=False)
+    data = InvoiceLinkVendor(vendor_id=999999, actor="test@test.com")
+    with pytest.raises(VendorNotFoundError):
+        link_invoice_to_vendor(db_session, inv_id, data)
+
+def test_link_invoice_to_vendor_duplicate_collision_rolls_back(db_session: Session):
+    vendor_id, po_id, inv_id = create_test_vendor_po_inv(db_session, has_po=False)
+    inv = db_session.query(Invoice).filter(Invoice.id == inv_id).first()
+    original_inv_num = inv.invoice_number
+    
+    inv_b = Invoice(
+        invoice_number=original_inv_num,
+        vendor_id=None,
+        po_id=None,
+        issue_date="2023-10-05",
+        total_amount=Decimal("100.00"),
+        items=[InvoiceItem(description="Item A", quantity=Decimal("10"), unit_price=Decimal("10.00"), total_price=Decimal("100.00"))]
+    )
+    db_session.add(inv_b)
+    db_session.commit()
+    inv_b_id = inv_b.id
+    
+    data = InvoiceLinkVendor(vendor_id=vendor_id, actor="coll@test.com")
+    
+    with patch('app.services.invoice.verify_invoice'):
+        try:
+            with db_session.begin_nested():
+                link_invoice_to_vendor(db_session, inv_b_id, data)
+        except Exception as e:
+            assert isinstance(e, InvoiceAlreadyExistsError)

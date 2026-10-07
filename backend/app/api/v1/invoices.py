@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from typing import List
 from sqlalchemy.orm import Session
 from app.database.connection import get_db
-from app.schemas.invoice import InvoiceCreate, InvoiceUpdate, InvoiceRead, InvoiceLinkPO
+from app.schemas.invoice import InvoiceCreate, InvoiceUpdate, InvoiceRead, InvoiceLinkPO, InvoiceLinkVendor, InvoiceItemMapPO, InvoiceItemUnmapPO
 from app.services import invoice as invoice_service
 
 router = APIRouter()
@@ -54,6 +54,66 @@ def link_invoice_to_purchase_order(invoice_id: int, data: InvoiceLinkPO, db: Ses
         db.rollback()
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
     except invoice_service.PurchaseOrderNotFoundError as e:
+        db.rollback()
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+    except Exception:
+        db.rollback()
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Internal server error")
+
+@router.post("/{invoice_id}/link-vendor", response_model=InvoiceRead)
+def link_invoice_to_vendor(invoice_id: int, data: InvoiceLinkVendor, db: Session = Depends(get_db)):
+    try:
+        invoice = invoice_service.link_invoice_to_vendor(db, invoice_id, data)
+        db.commit()
+        return invoice
+    except invoice_service.InvoiceNotFoundError as e:
+        db.rollback()
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+    except invoice_service.VendorNotFoundError as e:
+        db.rollback()
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+    except invoice_service.InvoiceAlreadyExistsError as e:
+        db.rollback()
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e))
+    except Exception:
+        db.rollback()
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Internal server error")
+
+@router.post("/{invoice_id}/items/{item_id}/map", response_model=InvoiceRead)
+def map_invoice_item(invoice_id: int, item_id: int, data: InvoiceItemMapPO, db: Session = Depends(get_db)):
+    try:
+        invoice = invoice_service.map_invoice_item_to_po_item(db, invoice_id, item_id, data)
+        db.commit()
+        return invoice
+    except invoice_service.InvoiceNotFoundError as e:
+        db.rollback()
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+    except invoice_service.InvoiceItemNotFoundError as e:
+        db.rollback()
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+    except invoice_service.PurchaseOrderItemNotFoundError as e:
+        db.rollback()
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+    except invoice_service.InvoiceNotLinkedToPOError as e:
+        db.rollback()
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(e))
+    except invoice_service.POItemBelongsToAnotherPOError as e:
+        db.rollback()
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(e))
+    except Exception:
+        db.rollback()
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Internal server error")
+
+@router.post("/{invoice_id}/items/{item_id}/unmap", response_model=InvoiceRead)
+def unmap_invoice_item(invoice_id: int, item_id: int, data: InvoiceItemUnmapPO, db: Session = Depends(get_db)):
+    try:
+        invoice = invoice_service.unmap_invoice_item_to_po_item(db, invoice_id, item_id, data)
+        db.commit()
+        return invoice
+    except invoice_service.InvoiceNotFoundError as e:
+        db.rollback()
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+    except invoice_service.InvoiceItemNotFoundError as e:
         db.rollback()
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
     except Exception:

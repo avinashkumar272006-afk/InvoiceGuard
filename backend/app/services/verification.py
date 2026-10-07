@@ -29,6 +29,16 @@ def verify_invoice(db: Session, invoice_id: int) -> Verification:
 
     new_exceptions = []
 
+    if not invoice.vendor_id:
+        if invoice.vendor_name_raw:
+            desc = f"Invoice vendor '{invoice.vendor_name_raw}' could not be resolved."
+        else:
+            desc = "Invoice vendor could not be resolved."
+        new_exceptions.append(InvoiceException(
+            exception_type=ExceptionType.VENDOR_UNRESOLVED,
+            description=desc
+        ))
+
     if not invoice.po_id:
         new_exceptions.append(InvoiceException(
             exception_type=ExceptionType.PO_NOT_FOUND,
@@ -57,7 +67,31 @@ def verify_invoice(db: Session, invoice_id: int) -> Verification:
                     description=f"Invoice total ({invoice.total_amount}) does not match PO total ({po.total_amount})."
                 ))
             
-            po_items_map = {item.description: item for item in po.items}
+            import re
+            def normalize_desc(desc: str) -> str:
+                if not desc:
+                    return ""
+                desc = desc.strip().lower()
+                desc = re.sub(r'[^a-z0-9]', '', desc)
+                return desc
+
+            po_items_by_id = {item.id: item for item in po.items}
+            po_items_exact = {}
+            for po_item in po.items:
+                desc = po_item.description
+                if desc in po_items_exact:
+                    po_items_exact[desc] = None # Ambiguous
+                else:
+                    po_items_exact[desc] = po_item
+            po_items_norm = {}
+            for po_item in po.items:
+                norm = normalize_desc(po_item.description)
+                if norm in po_items_norm:
+                    po_items_norm[norm] = None # Ambiguous
+                else:
+                    po_items_norm[norm] = po_item
+            
+            aggregated_quantities = {} # {po_item_id: [inv_item1, inv_item2]}
             
             for inv_item in invoice.items:
                 # Math check on line item
@@ -68,21 +102,32 @@ def verify_invoice(db: Session, invoice_id: int) -> Verification:
                         description=f"Line item '{inv_item.description}' quantity * unit_price ({inv_item.quantity * inv_item.unit_price}) does not match total_price ({inv_item.total_price})."
                     ))
 
-                if inv_item.description not in po_items_map:
+                matched_po_item = None
+                
+                # Rule 1: po_item_id is authoritative
+                if inv_item.po_item_id is not None:
+                    matched_po_item = po_items_by_id.get(inv_item.po_item_id)
+                else:
+                    # Rule 2: exact match
+                    if inv_item.description in po_items_exact:
+                        matched_po_item = po_items_exact[inv_item.description]
+                    else:
+                        # Rule 3: normalized match
+                        norm_desc = normalize_desc(inv_item.description)
+                        matched_po_item = po_items_norm.get(norm_desc)
+
+                if not matched_po_item:
                     new_exceptions.append(InvoiceException(
                         line_item_id=inv_item.id,
                         exception_type=ExceptionType.NOT_ON_PO,
                         description=f"Invoice item '{inv_item.description}' not found on Purchase Order."
                     ))
                 else:
-                    po_item = po_items_map[inv_item.description]
+                    po_item = matched_po_item
                     
-                    if inv_item.quantity > po_item.quantity:
-                        new_exceptions.append(InvoiceException(
-                            line_item_id=inv_item.id,
-                            exception_type=ExceptionType.QUANTITY_MISMATCH,
-                            description=f"Invoice item '{inv_item.description}' quantity ({inv_item.quantity}) exceeds PO quantity ({po_item.quantity})."
-                        ))
+                    if po_item.id not in aggregated_quantities:
+                        aggregated_quantities[po_item.id] = []
+                    aggregated_quantities[po_item.id].append(inv_item)
                         
                     if inv_item.unit_price != po_item.unit_price:
                         new_exceptions.append(InvoiceException(
@@ -90,6 +135,25 @@ def verify_invoice(db: Session, invoice_id: int) -> Verification:
                             exception_type=ExceptionType.PRICE_MISMATCH,
                             description=f"Invoice item '{inv_item.description}' unit price ({inv_item.unit_price}) does not match PO unit price ({po_item.unit_price})."
                         ))
+
+            # Rule 7 & 8: Quantity validation
+            for po_item_id, inv_items in aggregated_quantities.items():
+                po_item = po_items_by_id[po_item_id]
+                total_inv_qty = sum(item.quantity for item in inv_items)
+                
+                if total_inv_qty > po_item.quantity:
+                    primary_inv_item = sorted(inv_items, key=lambda x: x.id)[0]
+                    
+                    if len(inv_items) > 1:
+                        desc = f"Aggregated invoice quantity ({total_inv_qty}) for PO item '{po_item.description}' exceeds PO quantity ({po_item.quantity})."
+                    else:
+                        desc = f"Invoice item '{primary_inv_item.description}' quantity ({total_inv_qty}) exceeds PO quantity ({po_item.quantity})."
+                        
+                    new_exceptions.append(InvoiceException(
+                        line_item_id=primary_inv_item.id,
+                        exception_type=ExceptionType.QUANTITY_MISMATCH,
+                        description=desc
+                    ))
 
     old_exceptions_map = {
         (exc.exception_type, exc.description, exc.line_item_id): exc 

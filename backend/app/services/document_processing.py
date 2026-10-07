@@ -131,6 +131,7 @@ def process_document(db: Session, document_id: Any) -> DocumentProcessingResult:
         invoice_in = InvoiceCreate(
             invoice_number=extracted_data.invoice_number,
             vendor_id=validation_result.vendor_id,
+            vendor_name_raw=validation_result.vendor_name_raw,
             po_id=None,
             issue_date=validation_result.parsed_issue_date,
             total_amount=validation_result.parsed_total_amount,

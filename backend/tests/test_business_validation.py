@@ -148,8 +148,10 @@ def test_vendor_not_found(db_session):
     mock_query.all.return_value = []
     
     result = BusinessValidationService.validate(db_session, schema)
-    assert not result.is_valid
-    assert any(i.code == "VENDOR_NOT_FOUND" for i in result.issues)
+    # M4.1.2: Vendor not found no longer aborts processing
+    assert result.is_valid is True
+    assert result.vendor_id is None
+    assert result.vendor_name_raw == "Test Vendor"
 
 def test_duplicate_vendor_name_ambiguity(db_session):
     schema = base_schema()
@@ -163,8 +165,10 @@ def test_duplicate_vendor_name_ambiguity(db_session):
     mock_query.all.return_value = [v1, v2]
     
     result = BusinessValidationService.validate(db_session, schema)
-    assert not result.is_valid
-    assert any(i.code == "VENDOR_AMBIGUOUS" for i in result.issues)
+    # M4.1.2: Ambiguous vendor no longer aborts processing
+    assert result.is_valid is True
+    assert result.vendor_id is None
+    assert result.vendor_name_raw == "Test Vendor"
 
 def test_tax_id_name_disagreement(db_session):
     schema = base_schema()
@@ -175,8 +179,10 @@ def test_tax_id_name_disagreement(db_session):
     mock_query.filter.return_value.first.return_value = vendor
     
     result = BusinessValidationService.validate(db_session, schema)
-    assert not result.is_valid
-    assert any(i.code == "VENDOR_MISMATCH" for i in result.issues)
+    # M4.1.2: Mismatched vendor no longer aborts processing
+    assert result.is_valid is True
+    assert result.vendor_id is None
+    assert result.vendor_name_raw == "Test Vendor"
 
 def test_duplicate_invoice_same_vendor(db_session):
     schema = base_schema()

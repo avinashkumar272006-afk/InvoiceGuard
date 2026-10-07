@@ -21,7 +21,8 @@ class Invoice(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     invoice_number: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
-    vendor_id: Mapped[int] = mapped_column(ForeignKey("vendors.id", ondelete="RESTRICT"), nullable=False, index=True)
+    vendor_id: Mapped[int | None] = mapped_column(ForeignKey("vendors.id", ondelete="RESTRICT"), nullable=True, index=True)
+    vendor_name_raw: Mapped[str | None] = mapped_column(String(255), nullable=True)
     po_id: Mapped[int | None] = mapped_column(ForeignKey("purchase_orders.id", ondelete="SET NULL"), nullable=True, index=True)
     issue_date: Mapped[date] = mapped_column(Date, nullable=False)
     total_amount: Mapped[Decimal] = mapped_column(Numeric(15, 2), nullable=False)
@@ -40,6 +41,7 @@ class InvoiceItem(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     invoice_id: Mapped[int] = mapped_column(ForeignKey("invoices.id", ondelete="CASCADE"), nullable=False, index=True)
+    po_item_id: Mapped[int | None] = mapped_column(ForeignKey("purchase_order_items.id", ondelete="SET NULL"), nullable=True, index=True)
     description: Mapped[str] = mapped_column(String(500), nullable=False)
     quantity: Mapped[Decimal] = mapped_column(Numeric(15, 3), nullable=False)
     unit_price: Mapped[Decimal] = mapped_column(Numeric(15, 2), nullable=False)
@@ -47,3 +49,4 @@ class InvoiceItem(Base):
 
     # Relationships
     invoice: Mapped["Invoice"] = relationship("Invoice", back_populates="items")
+    po_item: Mapped[Optional["PurchaseOrderItem"]] = relationship("PurchaseOrderItem")

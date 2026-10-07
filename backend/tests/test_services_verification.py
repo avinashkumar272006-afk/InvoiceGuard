@@ -250,3 +250,98 @@ def test_verify_resolved_collision(db_session: Session):
     assert reloaded_exc_a.resolved == True, "Resolved state was lost on re-verification!"
     assert reloaded_exc_b.resolved == False, "Unresolved state was incorrectly modified!"
 
+def test_vendor_unresolved_exception(db_session: Session):
+    inv_id = create_test_data(db_session)
+    inv = db_session.query(Invoice).filter(Invoice.id == inv_id).first()
+    inv.vendor_id = None
+    db_session.commit()
+    
+    verification = verify_invoice(db_session, inv_id)
+    assert verification.status == VerificationStatus.FAILED
+    
+    vendor_exc = [e for e in verification.exceptions if e.exception_type == ExceptionType.VENDOR_UNRESOLVED]
+    assert len(vendor_exc) == 1
+
+def test_vendor_unresolved_description(db_session: Session):
+    inv_id = create_test_data(db_session)
+    inv = db_session.query(Invoice).filter(Invoice.id == inv_id).first()
+    inv.vendor_id = None
+    inv.vendor_name_raw = "Test Vendor LLC"
+    db_session.commit()
+    
+    verification = verify_invoice(db_session, inv_id)
+    vendor_exc = [e for e in verification.exceptions if e.exception_type == ExceptionType.VENDOR_UNRESOLVED][0]
+    
+    assert "Test Vendor LLC" in vendor_exc.description
+
+def test_vendor_unresolved_no_duplicate(db_session: Session):
+    inv_id = create_test_data(db_session)
+    inv = db_session.query(Invoice).filter(Invoice.id == inv_id).first()
+    inv.vendor_id = None
+    db_session.commit()
+    
+    v1 = verify_invoice(db_session, inv_id)
+    v2 = verify_invoice(db_session, inv_id)
+    
+    vendor_exc = [e for e in v2.exceptions if e.exception_type == ExceptionType.VENDOR_UNRESOLVED]
+    assert len(vendor_exc) == 1
+
+def test_vendor_unresolved_is_invoice_level(db_session: Session):
+    inv_id = create_test_data(db_session)
+    inv = db_session.query(Invoice).filter(Invoice.id == inv_id).first()
+    inv.vendor_id = None
+    db_session.commit()
+    
+    verification = verify_invoice(db_session, inv_id)
+    vendor_exc = [e for e in verification.exceptions if e.exception_type == ExceptionType.VENDOR_UNRESOLVED][0]
+    
+    assert vendor_exc.line_item_id is None
+
+def test_vendor_unresolved_resolved_preserved(db_session: Session):
+    inv_id = create_test_data(db_session)
+    inv = db_session.query(Invoice).filter(Invoice.id == inv_id).first()
+    inv.vendor_id = None
+    db_session.commit()
+    
+    v1 = verify_invoice(db_session, inv_id)
+    vendor_exc = [e for e in v1.exceptions if e.exception_type == ExceptionType.VENDOR_UNRESOLVED][0]
+    vendor_exc.resolved = True
+    db_session.commit()
+    
+    v2 = verify_invoice(db_session, inv_id)
+    vendor_exc2 = [e for e in v2.exceptions if e.exception_type == ExceptionType.VENDOR_UNRESOLVED][0]
+    assert vendor_exc2.resolved == True
+
+def test_vendor_unresolved_removed_after_vendor_exists(db_session: Session):
+    inv_id = create_test_data(db_session)
+    inv = db_session.query(Invoice).filter(Invoice.id == inv_id).first()
+    original_vendor_id = inv.vendor_id
+    inv.vendor_id = None
+    db_session.commit()
+    
+    v1 = verify_invoice(db_session, inv_id)
+    vendor_exc = [e for e in v1.exceptions if e.exception_type == ExceptionType.VENDOR_UNRESOLVED]
+    assert len(vendor_exc) == 1
+    
+    # assign vendor_id directly inside test
+    inv = db_session.query(Invoice).filter(Invoice.id == inv_id).first()
+    inv.vendor_id = original_vendor_id
+    db_session.commit()
+    
+    # rerun verification
+    v2 = verify_invoice(db_session, inv_id)
+    vendor_exc2 = [e for e in v2.exceptions if e.exception_type == ExceptionType.VENDOR_UNRESOLVED]
+    assert len(vendor_exc2) == 0
+
+def test_vendor_unresolved_coexists_with_other_exceptions(db_session: Session):
+    # invoice has unresolved vendor plus another verification issue (e.g. PO not found)
+    inv_id = create_test_data(db_session, no_po=True)
+    inv = db_session.query(Invoice).filter(Invoice.id == inv_id).first()
+    inv.vendor_id = None
+    db_session.commit()
+    
+    verification = verify_invoice(db_session, inv_id)
+    
+    exc_types = [e.exception_type for e in verification.exceptions]
+    assert ExceptionType.VENDOR_UNRESOLVED in exc_types
+    assert ExceptionType.PO_NOT_FOUND in exc_types

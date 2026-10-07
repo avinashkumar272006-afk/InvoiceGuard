@@ -13,6 +13,7 @@ class BusinessValidationIssue(BaseModel):
 class BusinessValidationResult(BaseModel):
     is_valid: bool
     vendor_id: Optional[int] = None
+    vendor_name_raw: Optional[str] = None
     parsed_issue_date: Optional[date] = None
     parsed_subtotal: Optional[Decimal] = None
     parsed_tax_amount: Optional[Decimal] = None

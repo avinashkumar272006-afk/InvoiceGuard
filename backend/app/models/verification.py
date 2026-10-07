@@ -18,6 +18,7 @@ class ExceptionType(str, enum.Enum):
     NOT_ON_PO = "NOT_ON_PO"
     PO_NOT_FOUND = "PO_NOT_FOUND"
     MATH_ERROR = "MATH_ERROR"
+    VENDOR_UNRESOLVED = "VENDOR_UNRESOLVED"
 
 class Verification(Base):
     __tablename__ = "verifications"
