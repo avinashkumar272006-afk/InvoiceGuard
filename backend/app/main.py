@@ -11,6 +11,8 @@ from app.core.config import settings
 from app.database.connection import get_db
 from app.api.v1.router import api_router
 from app.core.logging import setup_logging, request_id_var
+from contextlib import asynccontextmanager
+import asyncio
 
 # Setup structured logging
 setup_logging()
@@ -44,10 +46,22 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
         finally:
             request_id_var.reset(token)
 
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    from app.services.worker import run_worker_loop
+    worker_task = asyncio.create_task(run_worker_loop())
+    yield
+    worker_task.cancel()
+    try:
+        await worker_task
+    except asyncio.CancelledError:
+        pass
+
 app = FastAPI(
     title=settings.app_name,
     description="Invoice Exception & Verification API",
     version=settings.app_version,
+    lifespan=lifespan,
 )
 
 origins = [origin.strip() for origin in settings.frontend_origins.split(",") if origin.strip()]

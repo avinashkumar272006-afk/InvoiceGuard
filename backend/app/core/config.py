@@ -9,6 +9,7 @@ class Settings(BaseSettings):
     supabase_service_key: str = ""
     log_level: str = "INFO"
     frontend_origins: str = "http://localhost:3000"
+    worker_poll_interval_seconds: float = 2.0
 
     model_config = {"env_file": ".env", "extra": "ignore"}
 
