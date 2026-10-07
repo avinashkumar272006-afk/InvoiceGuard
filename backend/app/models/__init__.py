@@ -4,6 +4,7 @@ from .invoice import Invoice, InvoiceItem
 from .verification import Verification, InvoiceException
 from .audit import AuditLog
 from .invoice_document import InvoiceDocument, DocumentStatus
+from .document_processing_job import DocumentProcessingJob, JobStatus
 
 __all__ = [
     "Vendor",
@@ -16,4 +17,6 @@ __all__ = [
     "AuditLog",
     "InvoiceDocument",
     "DocumentStatus",
+    "DocumentProcessingJob",
+    "JobStatus",
 ]

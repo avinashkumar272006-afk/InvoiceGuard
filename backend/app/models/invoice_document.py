@@ -28,3 +28,6 @@ class InvoiceDocument(Base):
 
     # Relationships
     invoice: Mapped[Optional["Invoice"]] = relationship("Invoice", back_populates="document")
+    processing_job: Mapped[Optional["DocumentProcessingJob"]] = relationship(
+        "DocumentProcessingJob", back_populates="document", uselist=False
+    )
