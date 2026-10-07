@@ -10,6 +10,10 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
     frontend_origins: str = "http://localhost:3000"
     worker_poll_interval_seconds: float = 2.0
+    worker_max_attempts: int = 3
+    worker_retry_base_delay_seconds: int = 5
+    worker_retry_max_delay_seconds: int = 300
+    worker_stale_job_timeout_seconds: int = 300
 
     model_config = {"env_file": ".env", "extra": "ignore"}
 
